@@ -10,7 +10,7 @@ from pyairtable import Table
 # Airtable credentials
 AIRTABLE_PAT = "pat5u8TBUU0vyYUC1"
 AIRTABLE_BASE_ID = "app8Ixrz9x6GdANaT"
-AIRTABLE_TABLE_NAME = "SEO Metrics"
+AIRTABLE_TABLE_NAME = "SEO_Metrics"
 
 API_URL = "https://keyword.searchatlas.com/api/v2/competitor-research/"
 DETAIL_URL_TEMPLATE = "https://keyword.searchatlas.com/api/v2/competitor-research/{id}/"
