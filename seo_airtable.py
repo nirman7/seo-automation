@@ -8,7 +8,7 @@ from dateutil.relativedelta import relativedelta
 from pyairtable import Table
 
 # Airtable credentials
-AIRTABLE_PAT = "pat5u8TBUU0vyYUC1"
+AIRTABLE_PAT = "pat5u8TBUU0vyYUC1.062a0449934355a185a7faddc86dcc27a11937701d946c30309d4df5522ac830"
 AIRTABLE_BASE_ID = "app8Ixrz9x6GdANaT"
 AIRTABLE_TABLE_NAME = "SEO_Metrics"
 
