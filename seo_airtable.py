@@ -30,9 +30,9 @@ METRIC_COLUMNS = [
     "Trust Flow", "Citation Flow", "Paid Keywords", "Date"
 ]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 2) HELPERS
+# ---------------------------------------------------------------------------
 def blank_record(domain: str, reason: str = "N/A") -> dict:
     rec = {col: reason for col in METRIC_COLUMNS}
     rec["Domain"] = domain
@@ -49,19 +49,19 @@ def month_delta(trend, months_back):
 def delta(cur, past, key):
     return (cur.get(key, 0) - past.get(key, 0)) if (cur and past) else "Insufficient"
 
-def safe_divide(numerator, denominator):
+def safe_percent_change(delta_val, base_val):
     try:
-        if isinstance(numerator, (int, float)) and isinstance(denominator, (int, float)) and denominator != 0:
-            return round((numerator / denominator) * 100, 2)
-    except Exception:
+        if isinstance(delta_val, (int, float)) and isinstance(base_val, (int, float)) and base_val != 0:
+            return round((delta_val / base_val) * 100, 2)
+    except:
         pass
     return "N/A"
 
-def traffic_efficiency(traffic_delta, keyword_delta):
+def safe_ratio(numerator, denominator):
     try:
-        if isinstance(traffic_delta, (int, float)) and isinstance(keyword_delta, (int, float)) and keyword_delta != 0:
-            return round(traffic_delta / keyword_delta, 2)
-    except Exception:
+        if isinstance(numerator, (int, float)) and isinstance(denominator, (int, float)) and denominator != 0:
+            return round(numerator / denominator, 2)
+    except:
         pass
     return "N/A"
 
@@ -72,203 +72,89 @@ def fetch_metrics(domain: str) -> dict:
     research_id = r.json()["id"]
 
     time.sleep(6)
-    detail = requests.get(DETAIL_URL_TPL.format(id=research_id), headers=API_HEADERS, timeout=60).json()
-    data = detail["data"]
+
+    detail = requests.get(DETAIL_URL_TPL.format(id=research_id),
+                          headers=API_HEADERS, timeout=60).json()
+    data       = detail["data"]
     competitor = data.get("competitor_research", {})
-    trend = sorted(competitor.get("organic_trend", []), key=lambda x: x["date"])
+    trend      = sorted(competitor.get("organic_trend", []), key=lambda x: x["date"])
     if not trend:
         raise ValueError("No organic_trend")
 
-    latest = trend[-1]
-    one_mo = month_delta(trend, 1)
+    latest   = trend[-1]
+    one_mo   = month_delta(trend, 1)
     three_mo = month_delta(trend, 3)
 
-    # Raw values for metric computation
-    page1_keywords = latest.get("organic_keywords_top_3", 0)
-    page1_delta_3m = delta(latest, three_mo, "organic_keywords_top_3")
-    traffic_delta_3m = delta(latest, three_mo, "organic_traffic")
-    keyword_delta_3m = delta(latest, three_mo, "organic_keywords")
+    page1_now   = latest.get("organic_keywords_top_3")
+    page1_delta = delta(latest, three_mo, "organic_keywords_top_3")
+    page1_pct   = safe_percent_change(page1_delta, page1_now)
+
+    traffic_delta = delta(latest, three_mo, "organic_traffic")
+    keyword_delta = delta(latest, three_mo, "organic_keywords")
+    traffic_eff   = safe_ratio(traffic_delta, keyword_delta)
 
     return {
-        "Domain": domain,
-        "Traffic Δ 1m": delta(latest, one_mo, "organic_traffic"),
-        "Traffic Δ 3m": traffic_delta_3m,
-        "Organic Keywords": latest.get("organic_keywords", "N/A"),
-        "Keyword Δ 1m": delta(latest, one_mo, "organic_keywords"),
-        "Keyword Δ 3m": keyword_delta_3m,
-        "Page 1 Keywords": page1_keywords,
-        "Page 1 Δ 1m": delta(latest, one_mo, "organic_keywords_top_3"),
-        "Page 1 Δ 3m": page1_delta_3m,
-        "% Change in Page 1 Keywords": safe_divide(page1_delta_3m, page1_keywords),
-        "Traffic Efficiency": traffic_efficiency(traffic_delta_3m, keyword_delta_3m),
-        "Domain Rating": data.get("domain_rating", "N/A"),
-        "Domain Power": data.get("domain_power", "N/A"),
-        "Trust Flow": competitor.get("trust_flow", "N/A"),
-        "Citation Flow": competitor.get("citation_flow", "N/A"),
-        "Paid Keywords": competitor.get("paid_keywords", "N/A"),
-        "Date": datetime.now().strftime("%Y-%m-%d")
+        "Domain"                    : domain,
+        "Traffic Δ 1m"              : delta(latest, one_mo,  "organic_traffic"),
+        "Traffic Δ 3m"              : traffic_delta,
+        "Organic Keywords"          : latest.get("organic_keywords", "N/A"),
+        "Keyword Δ 1m"              : delta(latest, one_mo,  "organic_keywords"),
+        "Keyword Δ 3m"              : keyword_delta,
+        "Page 1 Keywords"           : page1_now,
+        "Page 1 Δ 1m"               : delta(latest, one_mo,  "organic_keywords_top_3"),
+        "Page 1 Δ 3m"               : page1_delta,
+        "% Change in Page 1 Keywords": page1_pct,
+        "Traffic Efficiency"        : traffic_eff,
+        "Domain Rating"             : data.get("domain_rating",  "N/A"),
+        "Domain Power"              : data.get("domain_power",   "N/A"),
+        "Trust Flow"                : competitor.get("trust_flow",    "N/A"),
+        "Citation Flow"             : competitor.get("citation_flow", "N/A"),
+        "Paid Keywords"             : competitor.get("paid_keywords", "N/A"),
+        "Date"                      : datetime.now().strftime("%Y-%m-%d")
     }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN PROCESSING
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 3) PROCESS INPUT
+# ---------------------------------------------------------------------------
 records = []
+
 with open(CSV_INPUT, newline="") as src:
     reader = csv.DictReader(src)
     for row in reader:
         raw = (row.get("domain") or "").strip()
-        if raw.lower() in {"", "na", "n/a"}:
-            print(f"⚠️  placeholder row for '{raw}'")
+        lowered = raw.lower()
+
+        if lowered in {"", "na", "n/a"}:
+            print(f"⚠️  placeholder row for  '{raw}'")
             records.append(blank_record(raw))
             continue
 
         print(f"🚀 Submitting: {raw}")
         try:
-            rec = fetch_metrics(raw)
-            rec["Domain"] = raw  # preserve original casing
-            print(f"✅ Completed: {raw}")
+            rec = fetch_metrics(lowered)
+            rec["Domain"] = raw
+            print(f"✅ Completed:  {raw}")
         except Exception as e:
             print(f"❌ Error for {raw}: {e}")
             rec = blank_record(raw, reason="Error")
 
         records.append(rec)
 
-# Save to CSV
+# ---------------------------------------------------------------------------
+# 4) SAVE CSV OUTPUT
+# ---------------------------------------------------------------------------
 with open(CSV_OUTPUT, "w", newline="") as out:
     writer = csv.DictWriter(out, fieldnames=METRIC_COLUMNS)
     writer.writeheader()
     writer.writerows(records)
 
-print(f"📄 Saved {CSV_OUTPUT}")
+print(f"📄 Saved  {CSV_OUTPUT}")
 
-# Push to Airtable
+# ---------------------------------------------------------------------------
+# 5) UPLOAD TO AIRTABLE
+# ---------------------------------------------------------------------------
 table = Table(AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
-for rec in records:
-    try:
-        table.create(rec)
-        print(f"☁️  Airtable row created for {rec['Domain']}")
-    except Exception as e:
-        print(f"❌ Airtable upload failed for {rec['Domain']}: {e}")METRIC_COLUMNS = [
-    "Domain", "Traffic Δ 1m", "Traffic Δ 3m", "Organic Keywords",
-    "Keyword Δ 1m", "Keyword Δ 3m", "Page 1 Keywords",
-    "Page 1 Δ 1m", "Page 1 Δ 3m", "% Change in Page 1 Keywords",
-    "Traffic Efficiency", "Domain Rating", "Domain Power",
-    "Trust Flow", "Citation Flow", "Paid Keywords", "Date"
-]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
-def blank_record(domain: str, reason: str = "N/A") -> dict:
-    rec = {col: reason for col in METRIC_COLUMNS}
-    rec["Domain"] = domain
-    rec["Date"]   = datetime.now().strftime("%Y-%m-%d")
-    return rec
-
-def month_delta(trend, months_back):
-    if not trend:
-        return None
-    latest = max(datetime.strptime(pt["date"], "%Y-%m-%d") for pt in trend)
-    target = latest - relativedelta(months=months_back)
-    return min(trend, key=lambda pt: abs(datetime.strptime(pt["date"], "%Y-%m-%d") - target))
-
-def delta(cur, past, key):
-    return (cur.get(key, 0) - past.get(key, 0)) if (cur and past) else "Insufficient"
-
-def safe_divide(numerator, denominator):
-    try:
-        if isinstance(numerator, (int, float)) and isinstance(denominator, (int, float)) and denominator != 0:
-            return round((numerator / denominator) * 100, 2)
-    except Exception:
-        pass
-    return "N/A"
-
-def traffic_efficiency(traffic_delta, keyword_delta):
-    try:
-        if isinstance(traffic_delta, (int, float)) and isinstance(keyword_delta, (int, float)) and keyword_delta != 0:
-            return round(traffic_delta / keyword_delta, 2)
-    except Exception:
-        pass
-    return "N/A"
-
-def fetch_metrics(domain: str) -> dict:
-    payload = {"url": domain, "mode": "domain", "country_code": "US"}
-    r = requests.post(API_URL, headers=API_HEADERS, json=payload, timeout=60)
-    r.raise_for_status()
-    research_id = r.json()["id"]
-
-    time.sleep(6)
-    detail = requests.get(DETAIL_URL_TPL.format(id=research_id), headers=API_HEADERS, timeout=60).json()
-    data = detail["data"]
-    competitor = data.get("competitor_research", {})
-    trend = sorted(competitor.get("organic_trend", []), key=lambda x: x["date"])
-    if not trend:
-        raise ValueError("No organic_trend")
-
-    latest = trend[-1]
-    one_mo = month_delta(trend, 1)
-    three_mo = month_delta(trend, 3)
-
-    # Raw values for metric computation
-    page1_keywords = latest.get("organic_keywords_top_3", 0)
-    page1_delta_3m = delta(latest, three_mo, "organic_keywords_top_3")
-    traffic_delta_3m = delta(latest, three_mo, "organic_traffic")
-    keyword_delta_3m = delta(latest, three_mo, "organic_keywords")
-
-    return {
-        "Domain": domain,
-        "Traffic Δ 1m": delta(latest, one_mo, "organic_traffic"),
-        "Traffic Δ 3m": traffic_delta_3m,
-        "Organic Keywords": latest.get("organic_keywords", "N/A"),
-        "Keyword Δ 1m": delta(latest, one_mo, "organic_keywords"),
-        "Keyword Δ 3m": keyword_delta_3m,
-        "Page 1 Keywords": page1_keywords,
-        "Page 1 Δ 1m": delta(latest, one_mo, "organic_keywords_top_3"),
-        "Page 1 Δ 3m": page1_delta_3m,
-        "% Change in Page 1 Keywords": safe_divide(page1_delta_3m, page1_keywords),
-        "Traffic Efficiency": traffic_efficiency(traffic_delta_3m, keyword_delta_3m),
-        "Domain Rating": data.get("domain_rating", "N/A"),
-        "Domain Power": data.get("domain_power", "N/A"),
-        "Trust Flow": competitor.get("trust_flow", "N/A"),
-        "Citation Flow": competitor.get("citation_flow", "N/A"),
-        "Paid Keywords": competitor.get("paid_keywords", "N/A"),
-        "Date": datetime.now().strftime("%Y-%m-%d")
-    }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN PROCESSING
-# ─────────────────────────────────────────────────────────────────────────────
-records = []
-with open(CSV_INPUT, newline="") as src:
-    reader = csv.DictReader(src)
-    for row in reader:
-        raw = (row.get("domain") or "").strip()
-        if raw.lower() in {"", "na", "n/a"}:
-            print(f"⚠️  placeholder row for '{raw}'")
-            records.append(blank_record(raw))
-            continue
-
-        print(f"🚀 Submitting: {raw}")
-        try:
-            rec = fetch_metrics(raw)
-            rec["Domain"] = raw  # preserve original casing
-            print(f"✅ Completed: {raw}")
-        except Exception as e:
-            print(f"❌ Error for {raw}: {e}")
-            rec = blank_record(raw, reason="Error")
-
-        records.append(rec)
-
-# Save to CSV
-with open(CSV_OUTPUT, "w", newline="") as out:
-    writer = csv.DictWriter(out, fieldnames=METRIC_COLUMNS)
-    writer.writeheader()
-    writer.writerows(records)
-
-print(f"📄 Saved {CSV_OUTPUT}")
-
-# Push to Airtable
-table = Table(AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
 for rec in records:
     try:
         table.create(rec)
