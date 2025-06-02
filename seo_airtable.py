@@ -10,7 +10,7 @@ from pyairtable import Table
 # ---------------------------------------------------------------------------
 # 1) CONSTANTS ───────────────────────────────────────────────────────────────
 # ---------------------------------------------------------------------------
-AIRTABLE_PAT        = "pat5u8TBUU0vyYUC1.062a0449934355a185a7faddc86dcc27a11937701d946c30309d4df5522ac830"
+AIRTABLE_PAT        = "pat9bJSI1M4bOQZc6.f9b19c9e872dfc6c022956fb63fb6e0e740d35f7ea9849f05fe03325470b8f83"
 AIRTABLE_BASE_ID    = "app8Ixrz9x6GdANaT"
 AIRTABLE_TABLE_NAME = "SEO_Metrics"
 
